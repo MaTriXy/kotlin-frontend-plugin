@@ -25,15 +25,13 @@ open class GenerateWebpackHelperTask : DefaultTask() {
     @TaskAction
     fun main() {
         val json = JsonBuilder(config(project, config, File(webPackConfigFilePath))).toPrettyString()
-
-        result.writeText("""
-        module.exports = $json
-        """.replaceIndent())
+        result.writeText("module.exports = $json;\n")
     }
 
 
     companion object {
         fun config(project: Project, config: WebPackExtension, webPackConfigFile: File) = mapOf(
+                "host" to config.host,
                 "port" to config.port,
                 "shutDownPath" to WebPackRunTask.ShutDownPath,
                 "webPackConfig" to webPackConfigFile.absolutePath,

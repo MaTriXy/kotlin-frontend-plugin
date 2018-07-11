@@ -8,6 +8,11 @@ import org.jetbrains.kotlin.gradle.frontend.webpack.*
 import java.io.*
 
 open class KarmaConfigTask : DefaultTask() {
+    @get:Internal
+    @get:Optional
+    val configsDir: File
+        get() = project.projectDir.resolve("karma.config.d")
+
     @get:Input
     val sourceMaps: Boolean
         get() = project.frontendExtension.sourceMaps
@@ -41,8 +46,8 @@ open class KarmaConfigTask : DefaultTask() {
                 "runnerPort" to extension.runnerPort,
                 "colors" to false,
                 "autoWatch" to true,
-                "browsers" to listOf("PhantomJS"),
-                "captureTimeout" to 5000,
+                "browsers" to extension.browsers,
+                "captureTimeout" to extension.captureTimeout,
                 "singleRun" to false,
                 "preprocessors" to mapOf(
                     kotlinTestOutput(project).absolutePath to preprocessors
@@ -69,6 +74,19 @@ open class KarmaConfigTask : DefaultTask() {
                     "testTimeout" to 5000
                 )
             }
+
+            if ("jasmine" in extension.frameworks) {
+                if ("karma-jasmine" !in plugins) {
+                    plugins += "karma-jasmine"
+                }
+            }
+
+            if ("mocha" in extension.frameworks) {
+                if ("karma-mocha" !in plugins) {
+                    plugins += "karma-mocha"
+                }
+            }
+
             if (sourceMaps) {
                 preprocessors += "sourcemap"
                 plugins += "karma-sourcemap-loader"
@@ -77,7 +95,28 @@ open class KarmaConfigTask : DefaultTask() {
                 project.tasks.withType(GenerateWebPackConfigTask::class.java).single().let { webpackTask ->
                     webpackTask.webPackConfigFile.ifCanRead { file ->
                         prepares += "var webpackConfig = require(${JsonOutput.toJson(file.absolutePath)})"
-                        prepares += "webpackConfig.resolve.modules.push(" + JsonOutput.toJson(kotlinTestOutput(project).absolutePath) + ")"
+
+                        prepares += "webpackConfig.mode = 'development'"
+
+                        val roots = project.tasks.withType(GenerateWebPackConfigTask::class.java).flatMap {
+                            it.getModuleResolveRoots(testMode = true)
+                        }
+                        val webpackEntryContext = project.tasks.withType(GenerateWebPackConfigTask::class.java)
+                                .map { it.getContextDir(testMode = true).absolutePath }
+                                .distinct()
+                                .singleOrNull()
+                                ?: throw GradleException("Failed to detect webpack root context")
+
+                        if (roots.isEmpty()) throw GradleException("No module roots founds")
+
+                        prepares += "webpackConfig.resolve.modules = " + roots.joinToString(
+                                prefix = "[",
+                                postfix = "]",
+                                separator = ", ",
+                                transform = { JsonOutput.toJson(it) }
+                        )
+
+                        prepares += "webpackConfig.context = ${JsonOutput.toJson(webpackEntryContext)}"
 
                         plugins += "karma-webpack"
                         preprocessors += "webpack"
@@ -96,7 +135,21 @@ open class KarmaConfigTask : DefaultTask() {
                   .replace("#PREPARES", prepares.joinToString(";\n", postfix = ";\n"))
                   .replace("\"\\\$([^\"]+)\"".toRegex()) { m -> m.groupValues[1] }
 
-            karmaConfigFile.writeText(configText)
+            karmaConfigFile.bufferedWriter().use { out ->
+                out.append(configText)
+                out.appendln()
+
+                val p = "^\\d+".toRegex()
+                configsDir.listFiles()?.sortedBy { p.find(it.nameWithoutExtension)?.value?.toInt() ?: 0 }?.forEach {
+                    out.append("// from file ${it.path}")
+                    out.appendln()
+
+                    it.reader().use {
+                        it.copyTo(out)
+                    }
+                    out.appendln()
+                }
+            }
         }
     }
 

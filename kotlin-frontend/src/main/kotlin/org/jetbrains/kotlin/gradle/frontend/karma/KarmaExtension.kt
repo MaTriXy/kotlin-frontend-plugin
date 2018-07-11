@@ -19,6 +19,9 @@ open class KarmaExtension {
     var frameworks: MutableList<String> = mutableListOf("qunit")
 
     @Input
+    var browsers = mutableListOf("PhantomJS")
+
+    @Input
     var plugins: MutableList<String> = mutableListOf()
 
     @Input
@@ -29,4 +32,7 @@ open class KarmaExtension {
 
     @Input
     var enableWebPack = false
+
+    @Input
+    var captureTimeout: Int = 60000
 }

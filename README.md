@@ -13,7 +13,7 @@ First of all you have to apply plugin `org.jetbrains.kotlin.frontend` and setup 
 
 ```gradle
 buildscript {
-    ext.kotlin_version = '1.1.1'
+    ext.kotlin_version = '1.2.21'
 
     repositories {
         jcenter()
@@ -24,7 +24,7 @@ buildscript {
 
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        classpath "org.jetbrains.kotlin:kotlin-frontend-plugin:0.0.17"
+        classpath "org.jetbrains.kotlin:kotlin-frontend-plugin:0.0.30"
     }
 }
 
@@ -104,6 +104,7 @@ kotlinFrontend {
         sourceMapEnabled = true | false   // enable/disable source maps 
         contentPath = file(...) // a file that represents a directory to be served by dev server)
         publicPath = "/"  // web prefix
+        host = "localhost" // dev server host
         port = 8088   // dev server port
         proxyUrl = "" | "http://...."  // URL to be proxied, useful to proxy backend webserver
         stats = "errors-only"  // log level
