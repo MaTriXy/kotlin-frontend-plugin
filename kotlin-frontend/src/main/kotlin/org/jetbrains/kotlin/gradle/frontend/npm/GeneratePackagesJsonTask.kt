@@ -86,10 +86,10 @@ open class GeneratePackagesJsonTask : DefaultTask() {
         logger.info("Configuring npm")
 
         val dependencies = npm.dependencies + (project.tasks.filterIsInstance<UnpackGradleDependenciesTask>().map { task ->
-            task.resultNames?.map { Dependency(it.name, it.uri, Dependency.RuntimeScope) } ?: task.resultFile.readLinesOrEmpty()
+            task.resultNames?.map { Dependency(it.name, it.semver, Dependency.RuntimeScope) } ?: task.resultFile.readLinesOrEmpty()
                     .map { it.split("/", limit = 4).map(String::trim) }
                     .filter { it.size == 4 }
-                    .map { Dependency(it[0], it[3], Dependency.RuntimeScope) }
+                    .map { Dependency(it[0], it[2], Dependency.RuntimeScope) }
         }).flatten() + toolsDependencies.filter { it.scope == Dependency.RuntimeScope }
 
         val devDependencies = mutableListOf(*npm.developmentDependencies.toTypedArray())
@@ -122,8 +122,11 @@ open class GeneratePackagesJsonTask : DefaultTask() {
         packageJsonFile.writeText(JsonBuilder(resultJson).toPrettyString())
         npmrcFile.writeText("""
         progress=false
+        package-lock=false
         # cache-min=3600
         """.trimIndent())
+
+        npmrcFile.resolveSibling("package-lock.json").delete()
 
         if (buildPackageJsonFile != null) {
             buildPackageJsonFile.parentFile.mkdirsOrFail()

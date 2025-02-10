@@ -3,6 +3,7 @@ package org.jetbrains.kotlin.gradle.frontend.npm
 import groovy.json.*
 import org.gradle.api.*
 import org.gradle.api.artifacts.*
+import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.tasks.*
 import org.jetbrains.kotlin.gradle.frontend.Dependency
 import org.jetbrains.kotlin.gradle.frontend.util.*
@@ -16,13 +17,17 @@ open class UnpackGradleDependenciesTask : DefaultTask() {
     @Internal
     lateinit var dependenciesProvider: () -> List<Dependency>
 
+    var customCompileConfiguration: Configuration? = null
+
+    var customTestCompileConfiguration: Configuration? = null
+
     @get:Input
     val compileConfiguration: Configuration
-        get() = project.configurations.getByName("compile")
+        get() = customCompileConfiguration ?: project.configurations.getByName(JavaPlugin.COMPILE_CONFIGURATION_NAME)
 
     @get:Input
     val testCompileConfiguration: Configuration
-        get() = project.configurations.getByName("testCompile")
+        get() = customTestCompileConfiguration ?: project.configurations.getByName(JavaPlugin.TEST_COMPILE_CONFIGURATION_NAME)
 
     @OutputFile
     val resultFile = unpackFile(project)
@@ -84,7 +89,7 @@ open class UnpackGradleDependenciesTask : DefaultTask() {
 
                         val existingVersion = existingPackageJson["version"]?.toString() ?: toSemver(null)
 
-                        resultNames?.add(NameVersionsUri(name, artifact.moduleVersion.id.version, existingVersion, artifact.file.toLocalURI()))
+                        resultNames?.add(NameVersionsUri(name, artifact.moduleVersion.id.version, existingVersion, outDir.toLocalURI()))
                     } else {
                         val modules = getJsModuleNames(artifact.file)
                                 .takeIf { it.isNotEmpty() } ?: listOf(

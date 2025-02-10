@@ -9,6 +9,7 @@ import org.gradle.api.tasks.*
 import org.jetbrains.kotlin.gradle.frontend.util.*
 import org.jetbrains.kotlin.gradle.tasks.*
 import java.io.*
+import java.util.ArrayDeque
 
 /**
  * @author Sergey Mashkov
@@ -19,7 +20,7 @@ open class GenerateWebPackConfigTask : DefaultTask() {
         get() = project.projectDir.resolve("webpack.config.d")
 
     @Input
-    val projectDirectory = project.projectDir.absolutePath
+    val projectDirectory: String = project.projectDir.absolutePath
 
     @get:Input
     val contextDir by lazy { kotlinOutput(project).parentFile.absolutePath!! }
@@ -43,13 +44,13 @@ open class GenerateWebPackConfigTask : DefaultTask() {
     val webPackConfigFile: File = project.buildDir.resolve("webpack.config.js")
 
     @Input
-    val exts = project.frontendExtension.defined
+    val defined = project.frontendExtension.defined
 
     @get:Input
     private val isDceEnabled: Boolean by lazy {
         !project.tasks
                 .withType(KotlinJsDce::class.java)
-                .filter { it.isEnabled }.isEmpty()
+                .none { it.isEnabled }
     }
 
     init {
@@ -71,10 +72,20 @@ open class GenerateWebPackConfigTask : DefaultTask() {
         if (dceOutputFiles.isEmpty() || testMode) {
             resolveRoots.add(getContextDir(testMode).toRelativeString(project.buildDir))
 
-            project.configurations.findByName("compile")?.allDependencies
+            // Recursively walk the dependency graph and build a set of transitive local projects.
+            val allProjects = mutableSetOf<Project>()
+            val queue = ArrayDeque<Project>().apply { add(project) }
+            while (queue.isNotEmpty()) {
+                val current = queue.removeFirst()
+                val dependencies = current.configurations.findByName("compile")?.allDependencies
                     ?.filterIsInstance<ProjectDependency>().orEmpty()
                     .mapNotNull { it.dependencyProject }
-                    .flatMap { it.tasks.filterIsInstance<Kotlin2JsCompile>() }
+
+                allProjects.addAll(dependencies)
+                queue.addAll(dependencies)
+            }
+
+            allProjects.flatMap { it.tasks.filterIsInstance<Kotlin2JsCompile>() }
                     .filter { !it.name.contains("test", ignoreCase = true) }
                     .map { project.file(it.outputFileBridge()) }
                     .forEach { resolveRoots.add(it.parentFile.toRelativeString(project.buildDir)) }
@@ -95,8 +106,8 @@ open class GenerateWebPackConfigTask : DefaultTask() {
         }
 
         // node modules
-        resolveRoots.add(project.buildDir.resolve("node_modules").toRelativeString(project.buildDir))
         resolveRoots.add(project.buildDir.resolve("node_modules").absolutePath)
+        resolveRoots.add(project.buildDir.resolve("node_modules").toRelativeString(project.buildDir))
 
         return resolveRoots
     }
@@ -151,9 +162,9 @@ open class GenerateWebPackConfigTask : DefaultTask() {
             out.appendln(";")
 
 
-            if (exts.isNotEmpty()) {
+            if (defined.isNotEmpty()) {
                 out.append("var defined = ")
-                out.append(JsonBuilder(exts).toPrettyString())
+                out.append(JsonBuilder(defined).toPrettyString())
                 out.appendln(";")
 
                 out.appendln("config.plugins.push(new webpack.DefinePlugin(defined));")

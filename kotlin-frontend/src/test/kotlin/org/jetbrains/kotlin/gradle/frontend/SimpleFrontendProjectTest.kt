@@ -4,8 +4,8 @@ import groovy.json.JsonSlurper
 import org.gradle.testkit.runner.BuildTask
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
+import org.jetbrains.kotlin.gradle.frontend.util.mkdirsOrFail
 import org.jetbrains.kotlin.gradle.frontend.util.toSemver
-import org.jetbrains.kotlin.preprocessor.mkdirsOrFail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
@@ -198,12 +198,12 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
         val expectedKotlinVersion = toSemver(kotlinVersion)
 
         @Suppress("UNCHECKED_CAST")
-        val packageJsonKotlinLocation = projectDir.root.resolve("build/package.json")
+        val packageJsonKotlinVersion = projectDir.root.resolve("build/package.json")
                 .let { JsonSlurper().parse(it) as Map<String, Any?> }["dependencies"]
                 ?.let { it as Map<String, String?> }
                 ?.let { it["kotlin"] } ?: fail("No kotlin found in package.json")
 
-        assertTrue { packageJsonKotlinLocation.startsWith("file://") }
+        assertEquals(kotlinVersion, packageJsonKotlinVersion)
 
         @Suppress("UNCHECKED_CAST")
         assertEquals(expectedKotlinVersion,
@@ -402,24 +402,28 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
         projectDir.root.resolve("settings.gradle").writeText("""
         include 'module1'
         include 'module2'
+        include 'module3'
         """.trimIndent())
 
         val module1 = projectDir.root.resolve("module1")
         val module2 = projectDir.root.resolve("module2")
+        val module3 = projectDir.root.resolve("module3")
 
         module1.mkdirsOrFail()
         module2.mkdirsOrFail()
+        module3.mkdirsOrFail()
 
         val src1 = module1.resolve("src/main/kotlin")
         val src2 = module2.resolve("src/main/kotlin")
+        val src3 = module3.resolve("src/main/kotlin")
 
         src1.mkdirsOrFail()
         src2.mkdirsOrFail()
+        src3.mkdirsOrFail()
 
         val builder1 = BuildScriptBuilder().apply {
             this@apply.kotlinVersion = this@SimpleFrontendProjectTest.kotlinVersion
             applyKotlin2JsPlugin()
-            applyFrontendPlugin()
 
             addJsDependency()
         }
@@ -427,26 +431,35 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
         val builder2 = BuildScriptBuilder().apply {
             this@apply.kotlinVersion = this@SimpleFrontendProjectTest.kotlinVersion
             applyKotlin2JsPlugin()
-            applyFrontendPlugin()
 
+            addJsDependency()
             compileDependencies += ":module1"
         }
 
-        module1.resolve("build.gradle").writeText(builder1.build {
-            kotlinFrontend {
-                block("npm") {
-                    line("dependency \"tar\"")
-                    line("devDependency \"path\"")
-                }
-            }
+        val builder3 = BuildScriptBuilder().apply {
+            this@apply.kotlinVersion = this@SimpleFrontendProjectTest.kotlinVersion
+            applyKotlin2JsPlugin()
+            applyFrontendPlugin()
 
+            addJsDependency()
+            compileDependencies += ":module2"
+        }
+
+        module1.resolve("build.gradle").writeText(builder1.build {
             compileKotlin2Js {
-                line("kotlinOptions.outputFile = \"\${project.buildDir.path}/js/test-lib.js\"")
+                line("kotlinOptions.outputFile = \"\${project.buildDir.path}/js/test-lib1.js\"")
                 line("kotlinOptions.moduleKind = \"commonjs\"")
             }
         })
 
         module2.resolve("build.gradle").writeText(builder2.build {
+            compileKotlin2Js {
+                line("kotlinOptions.outputFile = \"\${project.buildDir.path}/js/test-lib2.js\"")
+                line("kotlinOptions.moduleKind = \"commonjs\"")
+            }
+        })
+
+        module3.resolve("build.gradle").writeText(builder3.build {
             compileKotlin2Js {
                 kotlinFrontend {
                     block("npm") {
@@ -464,20 +477,28 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
         })
 
         src1.resolve("lib.kt").writeText("""
-        package my.test.lib
+        package my.test.lib1
 
         val const1 = "my-special-const-1"
-        fun libFunction() = 1
+        fun lib1Function() = 1
         """.trimIndent())
 
-        src2.resolve("main.kt").writeText("""
-        package my.test.ui
-        import my.test.lib.*
+        src2.resolve("lib.kt").writeText("""
+        package my.test.lib2
 
-        val const1 = "my-special-const-2"
+        val const2 = "my-special-const-2"
+        fun lib2Function() = 2
+        """.trimIndent())
+
+        src3.resolve("main.kt").writeText("""
+        package my.test.ui
+        import my.test.lib1.*
+        import my.test.lib2.*
+
+        val const3 = "my-special-const-3"
 
         fun main(args: Array<String>) {
-            println(libFunction())
+            println(lib1Function() + lib2Function())
         }
         """.trimIndent())
 
@@ -485,11 +506,13 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
 
         assertEquals(TaskOutcome.SUCCESS, result.task(":module1:compileKotlin2Js")?.outcome)
         assertEquals(TaskOutcome.SUCCESS, result.task(":module2:compileKotlin2Js")?.outcome)
+        assertEquals(TaskOutcome.SUCCESS, result.task(":module3:compileKotlin2Js")?.outcome)
 
         runner.withArguments("bundle").build()
-        assertTrue { module2.resolve("build/bundle/main.bundle.js").exists() }
-        val bundleContent = module2.resolve("build/bundle/main.bundle.js").readText()
+        assertTrue { module3.resolve("build/bundle/main.bundle.js").exists() }
+        val bundleContent = module3.resolve("build/bundle/main.bundle.js").readText()
 
+        assertTrue { "my-special-const-3" in bundleContent }
         assertTrue { "my-special-const-2" in bundleContent }
         assertTrue { "my-special-const-1" in bundleContent }
     }
@@ -506,7 +529,7 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
 
     companion object {
         @JvmStatic
-        @Parameters
+        @Parameters(name = "gradle {0}, kotlin {1}")
         fun versions() = listOf(
             arrayOf("3.5", "1.1.61"),
             arrayOf("4.1", "1.1.61"),
@@ -516,7 +539,11 @@ class SimpleFrontendProjectTest(gradleVersion: String, kotlinVersion: String) : 
             arrayOf("4.4.1", "1.2.21"),
             arrayOf("4.4.1", "1.2.31"),
             arrayOf("4.5", "1.2.31"),
-            arrayOf("4.6", "1.2.31")
+            arrayOf("4.5", "1.2.41"),
+            arrayOf("4.6", "1.2.51"),
+            arrayOf("4.7", "1.2.51"),
+            arrayOf("4.8", "1.2.51"),
+            arrayOf("4.9", "1.2.51")
         )
     }
 }

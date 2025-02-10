@@ -9,7 +9,6 @@ import java.io.*
 
 open class KarmaConfigTask : DefaultTask() {
     @get:Internal
-    @get:Optional
     val configsDir: File
         get() = project.projectDir.resolve("karma.config.d")
 
@@ -55,6 +54,8 @@ open class KarmaConfigTask : DefaultTask() {
                 "plugins" to plugins,
                 "client" to clientConfig
             )
+
+            config += extension.extraConfig
 
             if ("junit" in extension.reporters) {
                 config["junitReporter"] = mapOf(

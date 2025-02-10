@@ -6,16 +6,12 @@ import org.gradle.api.*
 * @author Sergey Mashkov
 */
 interface PackageManager {
+    fun onIdeaSync(project: Project)
+
     fun apply(containerTask: Task)
     fun require(dependencies: List<Dependency>)
-    fun install(project: Project)
 
-    fun require(name: String, versionOrUri: String = "*", scope: String = DevelopmentScope) {
+    fun require(name: String, versionOrUri: String = "*", scope: String = Dependency.DevelopmentScope) {
         require(listOf(Dependency(name, versionOrUri, scope)))
-    }
-
-    companion object {
-        val DevelopmentScope = "development"
-        val RuntimeScope = "runtime"
     }
 }
